@@ -1,151 +1,174 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
-namespace Arkanoid
+namespace SimpleArkanoid
 {
-	[RequireComponent(typeof(BoxCollider2D))]
-	public class Paddle : MonoBehaviour
+    public class Paddle : MonoBehaviour
 	{
-		private Transform trans;
-		private RectTransform rectTrans;
-		[SerializeField] private RectTransform leftBorderRect;
-		[SerializeField] private RectTransform rightBorderRect;
-		private float leftLimiter;
-		private float rightLimiter;
+        [SerializeField] GameObject BallPrefab;
+        [SerializeField] float Speed = 20f;
+        [SerializeField] SpriteRenderer Field;
+
+        Transform _transform;
+
+		BoxCollider2D collider;
+        public BoxCollider2D Collider => collider;
+
+		float widthInitial;
+        float leftLimiter;
+        float rightLimiter;
+        List<Ball> balls = new List<Ball>();
+        float ballPositionInitialY;
+
+		void Awake()
+		{
+			_transform = GetComponent<Transform>();
+            collider = GetComponent<BoxCollider2D>();
+        }
 		
-		[SerializeField] private GameObject ballPrefab;
-
-		public float Speed = 20f;
-		public float Width;
-		private float widthInitial;
-
-		private void Awake()
+		void Start()
 		{
-			trans = GetComponent<Transform>();
-			rectTrans = GetComponent<RectTransform>();
-			if (ballPrefab == null)
-			{
-				throw new Exception("Ball prefab not assigned");
-			}
-			if (leftBorderRect == null)
-			{
-				throw new Exception("Left border rect not assigned");
-			}
-			if (rightBorderRect == null)
-			{
-				throw new Exception("Right border rect not assigned");
-			}
-		}
+            widthInitial = _transform.localScale.x;
+            SimplePool.Preload(BallPrefab, transform, 3);
+
+            float halfFieldX = (Field.size.x * Field.transform.localScale.x) / 2;
+            float halfWidth = _transform.localScale.x / 2;
+            leftLimiter = -halfFieldX + halfWidth;
+            rightLimiter = halfFieldX - halfWidth;
+
+            Ball ball = FindObjectOfType<Ball>();
+            if (ball != null)
+            {
+                ballPositionInitialY = ball.transform.position.y;
+                ball.Init(this);
+                balls.Add(ball);
+            }
+            else
+            {
+                ballPositionInitialY = _transform.position.y + 1f;
+                SpawnBall();
+            }
+
+            MouseController.MouseMovedEvent += Move;
+            TouchController.TouchEvent += Move;
+            BonusPaddleWidth.PaddleWidthBonusEvent += ModifyWidth;
+            BonusAdditionalBall.AdditionalBallBonusEvent += SpawnBall;
+            Ball.LostEvent += Lost;
+            // LivesController.DefeatedEvent += ResetAll;
+        }
 		
-		private void OnEnable()
+		void OnDestroy()
 		{
-#if UNITY_EDITOR
-			MouseController.OnMouseMovedEvent += Move;
-#else
-			TouchController.OnTouchEvent += Move;
-#endif
-			GameManager.OnGameRestartedEvent += Reset;
-		}
-		
-		private void OnDisable()
-		{
-#if UNITY_EDITOR
-			MouseController.OnMouseMovedEvent -= Move;
-#else
-			TouchController.OnTouchEvent -= Move;
-#endif
-			GameManager.OnGameRestartedEvent -= Reset;
+            MouseController.MouseMovedEvent -= Move;
+            TouchController.TouchEvent -= Move;
+            BonusPaddleWidth.PaddleWidthBonusEvent -= ModifyWidth;
+            BonusAdditionalBall.AdditionalBallBonusEvent -= SpawnBall;
+            Ball.LostEvent -= Lost;
+            // LivesController.DefeatedEvent -= ResetAll;
 		}
 
-		private void Start()
+        void ResetAll()
 		{
-			widthInitial = rectTrans.rect.width;
-			Reset();
-		}
+            _transform.position = new Vector3(0, _transform.position.y, 0);
+			balls.Clear();
 
-		private void Reset()
-		{
-			StopAllCoroutines();
-			
-			trans.position = new Vector3(0, trans.position.y, 0);
-			rectTrans.sizeDelta = new Vector2(widthInitial, rectTrans.rect.height);
-			
-			Canvas canvas = GetComponentInParent<Canvas>();
-			if (canvas != null)
-			{
-				float scaleX = canvas.GetComponent<RectTransform>().localScale.x;
-				Width = rectTrans.rect.width * scaleX;
-				leftLimiter = leftBorderRect.position.x + leftBorderRect.rect.width*scaleX;
-				rightLimiter = rightBorderRect.position.x - rightBorderRect.rect.width*scaleX;
-			}
-			
-			if (!FindObjectOfType<Ball>())
-			{
-				CreateBall();
-			}
-		}
+            SpawnBall();
+        }
 
-		private void Move(Vector2 clickedWorldPoint)
+		void Move(Vector2 clickedWorldPoint)
 		{
-			if (Time.timeScale < 0.1f)
-			{
+			if (Time.timeScale < 1f)
 				return;
-			}
-			if (clickedWorldPoint.y-2 > 0)
-			{
-				return;
-			}
-			float newDirectionX = clickedWorldPoint.x - trans.position.x;
+
+            float newDirectionX = clickedWorldPoint.x - _transform.position.x;
 			newDirectionX = Mathf.Clamp(newDirectionX, -1f, 1f);
-			Vector2 newPosition = trans.position + new Vector3(newDirectionX * Speed * 0.05f, 0, 0);
-			newPosition.x = Mathf.Clamp(newPosition.x, leftLimiter + Width / 2, rightLimiter - Width / 2);
-			trans.position = newPosition;
+
+			Vector2 newPosition = // cache all of these variables
+                _transform.position + new Vector3(newDirectionX * Speed * 0.05f, 0, 0);
+            newPosition.x = Mathf.Clamp(
+                newPosition.x, leftLimiter, rightLimiter);
+			_transform.position = newPosition;
 		}
 
-		private void CreateBall()
+        void Lost(Ball ball)
+        {
+            balls.Remove(ball);
+            if (balls.Count == 0)
+				ResetAll();
+        }
+
+		void SpawnBall()
 		{
-			Ball ball = Instantiate(ballPrefab, trans).GetComponent<Ball>();
+			GameObject go = SimplePool.Spawn(BallPrefab,
+                new Vector3(_transform.position.x, ballPositionInitialY), Quaternion.identity);
+            // go.transform.parent = transform;
+			go.transform.SetParent(transform);
+            Ball ball = go.GetComponent<Ball>();
 			ball.Init(this);
-		}
+            balls.Add(ball);
+        }
 
-		public void ChangeWidth(float addition)
+        public void ModifyWidth(float multiplier, float duration)
+        {
+            ChangeWidth(multiplier);
+            StartCoroutine(ResetWidthCoroutine(multiplier, duration));
+        }
+
+		void ChangeWidth(float multiplier, bool increase = true)
 		{
 			// update transform
-			rectTrans.sizeDelta = new Vector2(rectTrans.rect.width + addition, rectTrans.rect.height);
+            float multipliedScaleX;
+			if (increase)
+                multipliedScaleX = _transform.localScale.x * multiplier;
+			else
+                multipliedScaleX = _transform.localScale.x / multiplier;
+			_transform.localScale =
+                new Vector2(multipliedScaleX, _transform.localScale.y);
 			
 			// update collider
-			BoxCollider2D boxColleder = GetComponent<BoxCollider2D>();
-			boxColleder.size = new Vector2(rectTrans.rect.width, boxColleder.size.y);
-			
-			// update Width for limiters
+			BoxCollider2D boxColleder = (BoxCollider2D)collider;
+			boxColleder.size = _transform.localScale;
+
+            // update Width for limiters
 			Canvas canvas = GetComponentInParent<Canvas>();
 			if (canvas != null)
 			{
-				float scaleX = canvas.GetComponent<RectTransform>().localScale.x;
-				Width = rectTrans.rect.width * scaleX;
+                float halfFieldX = (Field.size.x * Field.transform.localScale.x) / 2;
+                float halfWidth = _transform.localScale.x / 2;
+                leftLimiter = -halfFieldX + halfWidth;
+                rightLimiter = halfFieldX - halfWidth;
 			}
 		}
 
-		public void ResetWidth(float addition, float duration)
-		{
-			StartCoroutine(ResetWidthCoroutine(addition, duration));
-		}
-		
-		IEnumerator ResetWidthCoroutine(float addition, float duration)
+        IEnumerator ResetWidthCoroutine(float multiplier, float duration)
 		{
 			yield return new WaitForSeconds(duration);
-			ChangeWidth(-addition);
+			ChangeWidth(multiplier, false);
 			yield return null;
 		}
 
-#if UNITY_EDITOR
-		private void OnDrawGizmos()
-		{
+        void OnDrawGizmos()
+        {
+            Transform trans = transform;
+
+			Gizmos.color = Color.magenta;
+            float halfColliderX = trans.localScale.x / 2;
+            float halfColliderY = trans.localScale.y / 2;
+			Gizmos.DrawLine(
+                new Vector3(trans.position.x - halfColliderX, trans.position.y),
+                new Vector3(trans.position.x + halfColliderX, trans.position.y));
+
 			Gizmos.color = Color.red;
-			Gizmos.DrawLine(transform.position, new Vector3(leftLimiter + Width/2, transform.position.y));
-			Gizmos.DrawLine(transform.position, new Vector3(rightLimiter - Width/2, transform.position.y));
-		}
-#endif
-	}
+            float halfFieldX = (Field.size.x * Field.transform.localScale.x) / 2;
+            float halfWidth = trans.localScale.x / 2;
+			leftLimiter = -halfFieldX + halfWidth;
+            rightLimiter = halfFieldX - halfWidth;
+            Gizmos.DrawLine(trans.position,
+                new Vector3(leftLimiter, trans.position.y));
+			Gizmos.DrawLine(trans.position,
+                new Vector3(rightLimiter, trans.position.y));
+        }
+    }
 }

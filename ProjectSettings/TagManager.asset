@@ -6,7 +6,7 @@ TagManager:
   tags:
   - Ball
   - Paddle
-  - Button
+  - Border
   layers:
   - Default
   - TransparentFX
@@ -16,11 +16,11 @@ TagManager:
   - UI
   - 
   - 
-  - Bonuses
-  - 
-  - 
-  - 
-  - 
+  - Bonus
+  - Ball
+  - Border
+  - Paddle
+  - Block
   - 
   - 
   - 
@@ -43,4 +43,7 @@ TagManager:
   m_SortingLayers:
   - name: Default
     uniqueID: 0
+    locked: 0
+  - name: UI
+    uniqueID: 2404838163
     locked: 0

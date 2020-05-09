@@ -1,48 +1,53 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEditor;
+using UnityEngine;
+using Random = UnityEngine.Random;
 
-namespace Arkanoid
+namespace SimpleArkanoid
 {
 	public class Block : MonoBehaviour
-	{
-		public delegate void OnBlockDestroyed(Block block);
-		public static event OnBlockDestroyed OnBlockDestroyedEvent;
-		
-		[Header("Block")]
-		public bool IsDestroyable = true;
-		public bool CanAffectGame = true;
-		public int HitsMax = 1;
-		private int hitsCurrent;
-		public int ScoreRewardFromKill = 10;
+    {
+        public static event Action<Block> BlockDestroyedEvent;
 
-		private void Start()
+		public int HitsMax = 1;
+        [SerializeField] bool RandomHitsCount = true;
+
+        int hitsCurrent;
+        BonusGiver bonusGiver;
+        BoxCollider2D collider;
+        public BoxCollider2D Collider => collider;
+
+        void Awake()
+        {
+            collider = GetComponent<BoxCollider2D>();
+            bonusGiver = GetComponent<BonusGiver>();
+        }
+
+		void Start()
 		{
 			hitsCurrent = HitsMax;
+            if (RandomHitsCount && HitsMax > 1)
+            {
+                hitsCurrent = Random.Range(1, HitsMax);
+            }
 		}
 
-		protected virtual void Hit()
+        protected virtual void Remove()
 		{
-			hitsCurrent -= 1;
-			if (hitsCurrent <= 0)
-			{
-				Remove();
-			}
-		}
+            BlockDestroyedEvent?.Invoke(this);
+            bonusGiver?.Activate();
+            Destroy(gameObject);
+        }
 
-		protected virtual void Remove()
-		{
-			if (OnBlockDestroyedEvent != null)
-			{
-				OnBlockDestroyedEvent(this);
-			}
-			gameObject.SetActive(false);
-		}
-
-		private void OnCollisionEnter2D(Collision2D other)
-		{
-			if(other.gameObject.CompareTag("Ball"))
-			{
-				Hit();
-			}
-		}
+        public bool Touch()
+        {
+            hitsCurrent -= 1;
+            if (hitsCurrent <= 0)
+            {
+                Remove();
+                return true;
+            }
+            return false;
+        }
 	}
 }
